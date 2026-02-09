@@ -331,89 +331,96 @@ class GameRecommender:
         }
     
     def _find_matching_games_parallel(self, owned_games, target_tags, target_categories, 
-                                     tag_weights, min_rating, sort_by, price_range, show_recent_only):
-        """Find games using parallel processing for speed"""
-        owned_app_ids = {g['appid'] for g in owned_games}
-        recommendations = []
-        seen_base_games = {}
+                                 tag_weights, min_rating, sort_by, price_range, show_recent_only):
+    """Find games using parallel processing for speed"""
+    owned_app_ids = {g['appid'] for g in owned_games}
+    
+    # EXPANDED game database (500+ popular games)
+    popular_games = [
+        # Top AAA Games
+        1086940, 1174180, 1091500, 1203220, 1938090, 2073850, 1172470, 1245620,
+        # Shooters
+        730, 578080, 271590, 2357570, 1966720, 1817070, 1623730, 1172470, 1938090,
+        # RPG & Adventure  
+        1142710, 1593500, 1151640, 1085660, 1675200, 2369390, 1203220, 1086940,
+        # Horror & Survival
+        105600, 252490, 346110, 413150, 892970, 1665460, 1089350, 975370, 2050650,
+        # Strategy
+        394360, 281990, 1888160, 1517290, 1778820, 2428980, 359550, 236850,
+        # Indie & Action
+        2358720, 1568590, 1449560, 2277680, 1794680, 1118200, 1145360, 457140,
+        # Multiplayer
+        570, 440, 4000, 1258080, 2073850, 1966720, 813780, 252490,
+        # Simulation & Building
+        255710, 294100, 526870, 1599340, 1404750, 1928980, 323190, 244850,
+        # Popular Steam Games
+        292030, 427520, 548430, 231430, 367520, 289070, 413150, 648800,
+        # More Variety
+        1794680, 1203630, 2050650, 1888930, 1145350, 1817230, 2239550, 892970,
+        1184370, 367520, 2369390, 1623730, 1418630, 1551360, 1449850, 1551360,
+        # Additional Popular
+        1599340, 1449560, 1172470, 1811260, 1794680, 2358720, 1235140, 1817070,
+        # More RPGs
+        1091500, 774361, 306130, 262060, 292030, 678960, 976730, 1449850,
+        # More Action
+        287700, 242760, 312530, 48700, 220200, 239140, 377160, 582010,
+        # More Indie
+        253230, 214770, 388880, 236090, 257850, 239140, 105600, 383120,
+        # More Multiplayer
+        578080, 1172470, 1938090, 813780, 271590, 252490, 359550, 346110,
+        # More Simulation
+        244850, 255710, 526870, 323190, 975370, 1599340, 1928980, 1404750,
+        # More Strategy
+        236850, 359550, 813780, 394360, 281990, 1888160, 1517290, 1778820,
+        # Recent Popular
+        1817070, 2357570, 2358720, 2369390, 2428980, 2239550, 2050650, 1938090,
+        # Classic Popular
+        8930, 620, 10, 20, 30, 40, 50, 60, 70, 80, 100, 130,
+        # More Classic
+        400, 420, 500, 550, 570, 730, 440, 4000,
+    ]
+    
+    # Remove duplicates from the list itself
+    popular_games = list(set(popular_games))
+    
+    seen_base_games = {}
+    recommendations = []
+    
+    # Use ThreadPoolExecutor for parallel API calls
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit all tasks
+        future_to_appid = {
+            executor.submit(
+                self._fetch_and_process_game, 
+                app_id, 
+                owned_app_ids, 
+                target_tags, 
+                target_categories,
+                tag_weights,
+                min_rating,
+                price_range,
+                show_recent_only,
+                {}  # Pass empty dict, we'll filter after
+            ): app_id for app_id in popular_games
+        }
         
-        # EXPANDED game database (500+ popular games)
-        popular_games = [
-            # Top AAA Games
-            1086940, 1174180, 1091500, 1203220, 1938090, 2073850, 1172470, 1245620,
-            # Shooters
-            730, 578080, 271590, 2357570, 1966720, 1817070, 1623730, 1172470, 1938090,
-            # RPG & Adventure  
-            1142710, 1593500, 1151640, 1085660, 1675200, 2369390, 1203220, 1086940,
-            # Horror & Survival
-            105600, 252490, 346110, 413150, 892970, 1665460, 1089350, 975370, 2050650,
-            # Strategy
-            394360, 281990, 1888160, 1517290, 1778820, 2428980, 359550, 236850,
-            # Indie & Action
-            2358720, 1568590, 1449560, 2277680, 1794680, 1118200, 1145360, 457140,
-            # Multiplayer
-            570, 440, 4000, 1258080, 2073850, 1966720, 813780, 252490,
-            # Simulation & Building
-            255710, 294100, 526870, 1599340, 1404750, 1928980, 323190, 244850,
-            # Popular Steam Games
-            292030, 427520, 548430, 231430, 367520, 289070, 413150, 648800,
-            # More Variety
-            1794680, 1203630, 2050650, 1888930, 1145350, 1817230, 2239550, 892970,
-            1184370, 367520, 2369390, 1623730, 1418630, 1551360, 1449850, 1551360,
-            # Additional Popular
-            1599340, 1449560, 1172470, 1811260, 1794680, 2358720, 1235140, 1817070,
-            # More RPGs
-            1091500, 774361, 306130, 262060, 292030, 678960, 976730, 1449850,
-            # More Action
-            287700, 242760, 312530, 48700, 220200, 239140, 377160, 582010,
-            # More Indie
-            253230, 214770, 388880, 236090, 257850, 239140, 105600, 383120,
-            # More Multiplayer
-            578080, 1172470, 1938090, 813780, 271590, 252490, 359550, 346110,
-            # More Simulation
-            244850, 255710, 526870, 323190, 975370, 1599340, 1928980, 1404750,
-            # More Strategy
-            236850, 359550, 813780, 394360, 281990, 1888160, 1517290, 1778820,
-            # Recent Popular
-            1817070, 2357570, 2358720, 2369390, 2428980, 2239550, 2050650, 1938090,
-            # Classic Popular
-            8930, 620, 10, 20, 30, 40, 50, 60, 70, 80, 100, 130,
-            # More Classic
-            400, 420, 500, 550, 570, 730, 440, 4000,
-        ]
+        # Collect results as they complete
+        completed = 0
+        total = len(popular_games)
         
-        # Use ThreadPoolExecutor for parallel API calls
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            # Submit all tasks
-            future_to_appid = {
-                executor.submit(
-                    self._fetch_and_process_game, 
-                    app_id, 
-                    owned_app_ids, 
-                    target_tags, 
-                    target_categories,
-                    tag_weights,
-                    min_rating,
-                    price_range,
-                    show_recent_only,
-                    seen_base_games
-                ): app_id for app_id in popular_games
-            }
+        for future in as_completed(future_to_appid):
+            completed += 1
+            if completed % 10 == 0:
+                print(f"Progress: {completed}/{total} games checked")
             
-            # Collect results as they complete
-            completed = 0
-            total = len(popular_games)
-            
-            for future in as_completed(future_to_appid):
-                completed += 1
-                if completed % 10 == 0:
-                    print(f"Progress: {completed}/{total} games checked")
+            result = future.result()
+            if result:
+                base_name = result['base_name']
                 
-                result = future.result()
-                if result:
-                    # Mark base game as seen
-                    seen_base_games[result['base_name']] = result['name']
+                # Only add if we haven't seen this base game
+                if base_name not in seen_base_games:
+                    seen_base_games[base_name] = result['name']
                     recommendations.append(result)
-        
-        print(f"Found {len(recommendations)} recommendations")
-        return recommendations
+    
+    print(f"Found {len(recommendations)} unique recommendations")
+    return recommendations
